@@ -1,3 +1,4 @@
+a=1
 
 Time = {hr=0, min=0, sec=0, raw=0}
 Time.mt = {}
@@ -37,7 +38,6 @@ function Time.get_raw(t)
   end
 end
 
-
 function Time.add(a,b)
   if getmetatable(a) ~= Time.mt then
     error('Time.add requires Time object as first argument')
@@ -51,22 +51,55 @@ function Time.add(a,b)
   return result
 end
 
+function Time.mt.__lt (a, b)
+  if not (a.raw and b.raw) then
+    error('Time comparison error - raw not defined for both objects')
+  end
+  return a.raw < b.raw
+end
+function Time.mt.__le (a, b)
+  if not (a.raw and b.raw) then
+    error('Time comparison error - raw not defined for both objects')
+  end
+  return a.raw <= b.raw
+end
+function Time.mt.__gt (a, b)
+  if not (a.raw and b.raw) then
+    error('Time comparison error - raw not defined for both objects')
+  end
+  return a.raw > b.raw
+end
+function Time.mt.__ge (a, b)
+  if not (a.raw and b.raw) then
+    error('Time comparison error - raw not defined for both objects')
+  end
+  return a.raw >= b.raw
+end
+function Time.mt.__eq (a, b)
+  if not (a.raw and b.raw) then
+    error('Time comparison error - raw not defined for both objects')
+  end
+  return a.raw == b.raw
+end
+function Time.mt.__ne (a, b)
+  if not (a.raw and b.raw) then
+    error('Time comparison error - raw not defined for both objects')
+  end
+  return a.raw ~= b.raw
+end
+
+
 Time.mt.__add = Time.add
 
-
-t = Time:new({hr=12, min=15, sec=0})
-print (t:tostring(), t.raw)
-u = Time:new({hr=0, min=20, sec=0})
-print (u:tostring(), u.raw)
-v = Time.add(t,u)
-print ("t+u=", v:tostring())
-
+function send_tick(obj, seconds)
+  obj.tick(obj,seconds)
+end
 
 Queue = {first=0, last=-1}
 function Queue:new (o)
   o = o or {}   -- create object if user does not provide one
   setmetatable(o, self)
-  Queue.__index = self
+  Queue.mt.__index = self
   return o
 end
 
@@ -99,5 +132,63 @@ function triangular(a, b, c)
 end
 
 Patient = {age=0, visit='well', complexity=1}
+Patient.mt = {}
+function Patient:new(o)
+  o = o or {}
+  setmetatable(o, Patient.mt)
+  Patient.mt.__index = self
+  return o
+end
 
-Source = {obj=Patient, }
+Source = {obj=Patient, rate=5, objects={}, created_count=0 }
+Source.mt = {}
+
+function Source:new(o)
+  o = o or {}
+  setmetatable(o, Source.mt)
+  o.destination = o.objects  -- will accumulate its own objects by default
+  Source.mt.__index = self
+  return o
+end
+
+function Source:tick(seconds)
+  spawn_per_sec = self.rate/3600
+  if math.random() < spawn_per_sec * seconds then
+   -- print('New person')
+    self.created_count = self.created_count + 1
+  end
+end
+
+-- Init
+
+math.randomseed(os.time())
+secs_per_tick = 10
+clock = Time:new({hr=8, min=0, sec=0})
+
+
+wr = Source:new()
+
+end_time = Time:new({hr=9})
+created = {}
+total_created = 0
+test_runs = 1000
+test_rate = 5
+wr.rate = test_rate
+for i=1,test_runs do
+  n = 0    -- to escape endless loops
+  clock = Time:new({hr=8, min=0, sec=0})
+  while clock <= end_time do
+  -- if (clock.raw % 600) == 0 then print(clock:tostring()) end
+    send_tick(wr, secs_per_tick)
+    clock = clock + {sec=secs_per_tick}
+    n = n + 1
+    if n > 1000 then break
+    end
+  end
+  -- print ("created " .. wr.created_count .. " patients.")
+  created[wr.created_count] = (created[wr.created_count] or 0) + 1
+  total_created = total_created + wr.created_count
+  wr.created_count = 0
+end
+for i = 1,10 do print(i, created[i] or 0) end
+print ("Average per run = ", total_created/test_runs .. " error = " .. test_rate*test_runs/total_created)
