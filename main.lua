@@ -1,4 +1,4 @@
-a=1
+require 'utils'
 
 Time = {hr=0, min=0, sec=0, raw=0}
 Time.mt = {}
@@ -7,6 +7,7 @@ function Time:new(o)
   o = o or {}
   setmetatable(o, Time.mt)
   Time.mt.__index = self
+  Time.mt.__tostring = Time.tostring
   if o.raw == 0 then
     o:set_raw()
   else
@@ -92,12 +93,11 @@ Time.mt.__add = Time.add
 function Time.string_to_time(s)
   local hr, min, sec
   _, _, hr, min, sec = string.find(s,"([0-9][0-9]?):([0-9][0-9]):?(%d*)")
-  print ('*', hr, min, sec)
   if hr == nil then error('Trying to convert invalid time literal ' .. s) end
   if (sec==nil) or (sec=='') then sec='0' end
   return Time:new({hr=hr, min=min, sec = sec})
 end
-print ((Time.string_to_time('8:45:14'):tostring()))
+
 
 function send_tick(obj, seconds)
   obj.tick(obj,seconds)
@@ -131,7 +131,6 @@ function triangular(a, b, c)
 -- see https://bit.ly/3tVdfHD in Wikipedia
   local u = math.random()
   local inflex = (c-a)/(b-a)
-  print (u, inflex)
   if u < inflex then
     return a + math.sqrt(u*(b-a)*(c-a))
   else
@@ -167,25 +166,62 @@ function Source:tick(seconds)
   end
 end
 
+Appointment = {}
+Appointment.mt = {}
+
+function Appointment:new(o)
+  o = o or {}
+  setmetatable(o, Appointment.mt)
+  Appointment.mt.__index = self
+  Appointment.mt.__tostring = Appointment.tostring
+  o.appt_time = Time.string_to_time(o[1])
+  o.appt_type = o[2]
+  return o
+end
+
+function Appointment:tostring()
+  local arrival = tostring(self.arrival_time)
+  if self.arrival_time > Time.string_to_time('18:00') then arrival = 'no show' end
+  return (tostring(self.appt_time) .. ' ' .. self.appt_type .. ' --> ' .. arrival)
+end
+
+appt = Appointment:new({'8:00','well'})
+
 Schedule = {}
 Schedule.mt = {}
 
 function Schedule:new(o)
   o = o or {}
   setmetatable(o, Schedule.mt)
-  o.destination = o.objects
   Schedule.mt.__index = self
+  Schedule.mt.__tostring = Schedule.tostring
+  for _, appt in ipairs(o) do
+    appt = Appointment:new(appt)
+    if math.random() < noshow then
+      appt.arrival_time = Time.string_to_time('23:59')
+    else
+      appt.arrival_time = appt.appt_time + 60*triangular(-10,0,20)
+    end
+  end
   return o
 end
 
+function Schedule:tostring()
+  str = ''
+  for _, appt in ipairs(self) do
+    str = str .. tostring(appt) .. "\n"
+  end
+  return str
+end
 
 -- Init
 
 math.randomseed(os.time())
 secs_per_tick = 10
 clock = Time:new({hr=8, min=0, sec=0})
+noshow = 0.1
 
-sched = Schedule.new({
+sched = Schedule:new({
     {'8:00','well'}, {'8:00','well'},{'8:15','well'},{'8:15','well'},{'8:30','well'},
     {'8:45','well'},{'9:00','well'},{'9:00','well'},{'9:15','well'},
     {'9:15','well'},{'9:30','well'},{'9:45','well'},{'10:00','well'},
