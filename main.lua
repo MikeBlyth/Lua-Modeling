@@ -87,9 +87,17 @@ function Time.mt.__ne (a, b)
   end
   return a.raw ~= b.raw
 end
-
-
 Time.mt.__add = Time.add
+
+function Time.string_to_time(s)
+  local hr, min, sec
+  _, _, hr, min, sec = string.find(s,"([0-9][0-9]?):([0-9][0-9]):?(%d*)")
+  print ('*', hr, min, sec)
+  if hr == nil then error('Trying to convert invalid time literal ' .. s) end
+  if (sec==nil) or (sec=='') then sec='0' end
+  return Time:new({hr=hr, min=min, sec = sec})
+end
+print ((Time.string_to_time('8:45:14'):tostring()))
 
 function send_tick(obj, seconds)
   obj.tick(obj,seconds)
@@ -159,36 +167,59 @@ function Source:tick(seconds)
   end
 end
 
+Schedule = {}
+Schedule.mt = {}
+
+function Schedule:new(o)
+  o = o or {}
+  setmetatable(o, Schedule.mt)
+  o.destination = o.objects
+  Schedule.mt.__index = self
+  return o
+end
+
+
 -- Init
 
 math.randomseed(os.time())
 secs_per_tick = 10
 clock = Time:new({hr=8, min=0, sec=0})
 
+sched = Schedule.new({
+    {'8:00','well'}, {'8:00','well'},{'8:15','well'},{'8:15','well'},{'8:30','well'},
+    {'8:45','well'},{'9:00','well'},{'9:00','well'},{'9:15','well'},
+    {'9:15','well'},{'9:30','well'},{'9:45','well'},{'10:00','well'},
+    {'10:00','well'},{'10:30','well'},{'10:45','well'},{'11:00','well'},
+    {'11:00','well'}
 
-wr = Source:new()
+})
 
-end_time = Time:new({hr=9})
-created = {}
-total_created = 0
-test_runs = 1000
-test_rate = 5
-wr.rate = test_rate
-for i=1,test_runs do
-  n = 0    -- to escape endless loops
-  clock = Time:new({hr=8, min=0, sec=0})
-  while clock <= end_time do
-  -- if (clock.raw % 600) == 0 then print(clock:tostring()) end
-    send_tick(wr, secs_per_tick)
-    clock = clock + {sec=secs_per_tick}
-    n = n + 1
-    if n > 1000 then break
+function test_source()
+
+  wr = Source:new()
+
+  end_time = Time:new({hr=9})
+  created = {}
+  total_created = 0
+  test_runs = 1000
+  test_rate = 5
+  wr.rate = test_rate
+  for i=1,test_runs do
+    n = 0    -- to escape endless loops
+    clock = Time:new({hr=8, min=0, sec=0})
+    while clock <= end_time do
+    -- if (clock.raw % 600) == 0 then print(clock:tostring()) end
+      send_tick(wr, secs_per_tick)
+      clock = clock + {sec=secs_per_tick}
+      n = n + 1
+      if n > 1000 then break
+      end
     end
+    -- print ("created " .. wr.created_count .. " patients.")
+    created[wr.created_count] = (created[wr.created_count] or 0) + 1
+    total_created = total_created + wr.created_count
+    wr.created_count = 0
   end
-  -- print ("created " .. wr.created_count .. " patients.")
-  created[wr.created_count] = (created[wr.created_count] or 0) + 1
-  total_created = total_created + wr.created_count
-  wr.created_count = 0
+  for i = 1,10 do print(i, created[i] or 0) end
+  print ("Average per run = ", total_created/test_runs .. " error = " .. test_rate*test_runs/total_created)
 end
-for i = 1,10 do print(i, created[i] or 0) end
-print ("Average per run = ", total_created/test_runs .. " error = " .. test_rate*test_runs/total_created)
