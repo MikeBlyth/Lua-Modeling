@@ -52,6 +52,24 @@ function Time.add(a,b)
   return result
 end
 
+function Time:advance_min(min)
+  if getmetatable(self) ~= Time.mt then
+    error('Time.add requires Time object as first argument')
+  end
+  self.raw = self.raw + min*60
+  self:set_hms()
+  self.check = 'OK'
+end
+
+function Time:advance_sec(sec)
+  if getmetatable(self) ~= Time.mt then
+    error('Time.add requires Time object as first argument')
+  end
+  self.raw = self.raw + sec
+  self:set_hms()
+  self.check = 'OK'
+end
+
 function Time.mt.__lt (a, b)
   if not (a.raw and b.raw) then
     error('Time comparison error - raw not defined for both objects')
@@ -104,10 +122,13 @@ function send_tick(obj, seconds)
 end
 
 Queue = {first=0, last=-1}
+Queue.mt = {}
+
 function Queue:new (o)
   o = o or {}   -- create object if user does not provide one
-  setmetatable(o, self)
+  setmetatable(o, self.mt)
   Queue.mt.__index = self
+  Queue.mt.__tostring = Queue.tostring
   return o
 end
 
@@ -124,6 +145,14 @@ end
 
 function Queue:length()
     return self.last - self.first + 1
+end
+
+function Queue:tostring()
+  local str = '<<'
+  for i=self.first, self.last do
+    str = str .. tostring(self[i]) .. ', '
+  end
+  return str .. '>>'
 end
 
 function triangular(a, b, c)
@@ -147,21 +176,33 @@ function Patient:new(o)
   return o
 end
 
-Source = {obj=Patient, rate=5, objects={}, created_count=0 }
+Source = {obj=Patient, rate=5, created_count=0 }
 Source.mt = {}
 
 function Source:new(o)
   o = o or {}
   setmetatable(o, Source.mt)
-  o.destination = o.objects  -- will accumulate its own objects by default
+  o.queue = Queue:new()
+  o.destination = o.queue  -- will accumulate its own objects by default
   Source.mt.__index = self
   return o
 end
 
+--[[
 function Source:tick(seconds)
   spawn_per_sec = self.rate/3600
   if math.random() < spawn_per_sec * seconds then
    -- print('New person')
+    self.created_count = self.created_count + 1
+  end
+end
+--]]
+
+function Source:tick(schedule)
+-- Determine whether there are any new patients to insert
+  local arrived = schedule:arrived()
+  for _, pt in ipairs(arrived) do
+    self.destination:add(pt)
     self.created_count = self.created_count + 1
   end
 end
@@ -182,7 +223,8 @@ end
 function Appointment:tostring()
   local arrival = tostring(self.arrival_time)
   if self.arrival_time > Time.string_to_time('18:00') then arrival = 'no show' end
-  return (tostring(self.appt_time) .. ' ' .. self.appt_type .. ' --> ' .. arrival)
+  return (tostring(self.appt_time) .. ' ' .. self.appt_type .. ' --> ' .. arrival
+    .. ' ' .. (self.status or ''))
 end
 
 appt = Appointment:new({'8:00','well'})
@@ -195,7 +237,10 @@ function Schedule:new(o)
   setmetatable(o, Schedule.mt)
   Schedule.mt.__index = self
   Schedule.mt.__tostring = Schedule.tostring
+  local next_id = 0
   for _, appt in ipairs(o) do
+    next_id = next_id + 1
+    appt.id = next_id
     appt = Appointment:new(appt)
     if math.random() < noshow then
       appt.arrival_time = Time.string_to_time('23:59')
@@ -212,6 +257,22 @@ function Schedule:tostring()
     str = str .. tostring(appt) .. "\n"
   end
   return str
+end
+
+function Schedule:arrived()
+-- Compare clock with each appointment arrival time
+-- Return table of patients who are newly arrived (arrival_time > clock), and
+--   mark those appointments as arrived
+  local new_arrivals = {}
+  new_arrival_count = 0
+  for _, appt in ipairs(self) do
+    if appt.arrival_time <= clock and appt.status == nil then
+      new_arrival_count = new_arrival_count + 1
+      new_arrivals[new_arrival_count] = appt
+      appt.status = 'arrived'
+    end
+  end
+  return new_arrivals
 end
 
 -- Init
