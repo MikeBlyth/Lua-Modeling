@@ -245,6 +245,11 @@ function Queue:add (item)
     self[self.last] = item
 end
 
+function Queue:peek_next()  -- just return next in line but don't remove from queue
+  if self.last < self.first then return nil end
+  return self[self.first]
+end
+
 function Queue:length()
     return self.last - self.first + 1
 end

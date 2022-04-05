@@ -17,9 +17,28 @@ function Patient:new(o)
   return o
 end
 
-Source = {obj=Patient, rate=5, created_count=0 }
-Source.mt = {}
+Family = {}
+Family.mt = {}
 
+function Family:new(o)
+-- A family is the set of children belonging together (sibs) on a visit
+  o = o or {}
+  setmetatable(o, Family.mt)
+  Family.mt.__index = self
+  Family.mt.__tostring = Family.tostring
+  return o
+end
+
+function Family:tostring()
+  s = '{'
+  for _,pt in ipairs(self) do
+    s = s .. tostring(pt) .. ', '
+  end
+  return s .. '}'
+end
+
+Source = {name='source', obj=Patient, rate=5, created_count=0 }
+Source.mt = {}
 function Source:new(o)
   o = o or {}
   setmetatable(o, Source.mt)
@@ -36,9 +55,9 @@ end
 
 function Source:tick(schedule)
 -- Determine whether there are any new patients to insert
-  local arrived = schedule:arrived()
+  local arrived = schedule:arrived() -- e.g. {pt1, pt2}
   for _, pt in ipairs(arrived) do
-    self.destination:add(pt)
+    self.destination:add(Family:new({pt}))   -- put ito the queue
     self.created_count = self.created_count + 1
   end
 end
@@ -49,7 +68,7 @@ function Source:next()
 end
 
 function Source:tostring()
-  local str = 'Source queue with ' .. self:count() .. ' entries.'
+  local str = 'Source "' .. (self.name or '?') .. '" with ' .. self:count() .. ' entries.'
   return str
 end
 
@@ -69,7 +88,8 @@ end
 function Appointment:tostring()
   local arrival = tostring(self.arrival_time)
   if self.arrival_time > Time.string_to_time('18:00') then arrival = 'no show' end
-  return (tostring(self.appt_time) .. ' ' .. self.appt_type .. ' --> ' .. arrival
+  return ((self.name or '?') .. ' @' ..
+    tostring(self.appt_time) .. ' ' .. self.appt_type .. ' --> ' .. arrival
     .. ' ' .. (self.status or ''))
 end
 
@@ -84,16 +104,19 @@ function Schedule:new(o)
   Schedule.mt.__index = self
   Schedule.mt.__tostring = Schedule.tostring
   local next_id = 0
+  -- This is just for generating a test schedule ---------------
   for _, appt in ipairs(o) do
     next_id = next_id + 1
     appt.id = next_id
     appt = Appointment:new(appt)
+    appt.name = test_names[next_id]
     if math.random() < noshow then
       appt.arrival_time = Time.string_to_time('23:59')
     else
       appt.arrival_time = appt.appt_time + 60*triangular(-10,0,40)
     end
   end
+  -----------------------------------------------------------------
   return o
 end
 
@@ -162,8 +185,55 @@ function Resource:tostring()
   str = str .. ' (' .. lock_word .. ')'
   return str
 end
-
 r = Resource:new({name='Maria', type='MA'})
+
+Process = {name='process', sources={},
+    in_process = nil, -- family currently in this process
+    queue = Queue:new(),  -- for those who have finished process
+    status='free',
+    finish_time=Time.string_to_time('0:00')
+}
+Process.mt = {}
+
+
+function Process:new(o)
+  o = o or {}
+  setmetatable(o, Process.mt)
+  Process.mt.__index = self
+  Process.mt.__tostring = Process.tostring
+  return o
+end
+
+function Process:tick()
+  if clock < self.finish_time then return end
+  -- Time is up; release patients if there are any, mark self as free
+  if self.in_process then
+    self.queue:add(self.in_process)
+    self.in_process = nil
+    self.status='free'
+  end
+  -- Check whether there are any patients waiting for this process
+  for _,source in ipairs(self.sources) do
+    if self.status == 'free' then
+      self.in_process = source.queue:remove()
+      self.status = 'busy'
+      local busy_time = 5 -- minutes
+      self.finish_time = clock + Time:new({min=busy_time})
+    end
+  end
+end
+
+function Process:tostring()
+  s = 'Process: "' .. self.name .. '"'
+  if self.status == 'free' then
+    s = s .. ' (free).'
+  else
+    s = s .. ', with ' .. tostring(self.in_process) .. ' until ' .. tostring(self.finish_time) .. '.'
+  end
+  s = s .. '\nFinished queue has ' .. self.queue:length() .. ' entries.'
+  return s
+end
+
 
 -- Init
 
@@ -184,7 +254,8 @@ sched = Schedule:new({
 
 
 
-wr = Source:new() -- waiting room
+wr = Source:new({name='arrivals'}) -- waiting room
+p = Process:new({name='registration', sources={wr}})
 
 breaker=0
 while clock < Time.string_to_time('12:00') and breaker < 5000 do
