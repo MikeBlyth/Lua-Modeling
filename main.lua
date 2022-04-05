@@ -110,6 +110,7 @@ function Schedule:new(o)
     appt.id = next_id
     appt = Appointment:new(appt)
     appt.name = test_names[next_id]
+    appt.provider = 'ProviderA'
     if math.random() < noshow then
       appt.arrival_time = Time.string_to_time('23:59')
     else
@@ -191,7 +192,8 @@ Process = {name='process', sources={},
     in_process = nil, -- family currently in this process
     queue = Queue:new(),  -- for those who have finished process
     status='free',
-    finish_time=Time.string_to_time('0:00')
+    finish_time=Time.string_to_time('0:00'),
+    post_process = function(p) return end
 }
 Process.mt = {}
 
@@ -211,6 +213,7 @@ function Process:tick()
     self.queue:add(self.in_process)
     self.in_process = nil
     self.status='free'
+    self:post_process()
   end
   -- Check whether there are any patients waiting for this process
   for _,source in ipairs(self.sources) do
@@ -234,6 +237,30 @@ function Process:tostring()
   return s
 end
 
+Queue_for_Provider = {name='ProviderName'}
+Queue_for_Provider.mt = {}
+
+function Queue_for_Provider:new(o)
+  o = o or {}
+  setmetatable(o, Queue_for_Provider.mt)
+  Queue_for_Provider.mt.__index = self
+  Queue_for_Provider.mt.__tostring = Queue_for_Provider.tostring
+  o.queue = Queue:new()
+  return o
+end
+
+Waiting_Room = {}
+Waiting_Room.mt = {}
+
+function Waiting_Room:new(o)
+  o = o or {}
+  setmetatable(o, Waiting_Room.mt)
+  Waiting_Room.mt.__index = self
+--  Waiting_Room.mt.__tostring = Waiting_Room.tostring
+  return o
+end
+
+
 
 -- Init
 
@@ -254,12 +281,23 @@ sched = Schedule:new({
 
 
 
-wr = Source:new({name='arrivals'}) -- waiting room
-p = Process:new({name='registration', sources={wr}})
+arr = Source:new({name='arrivals'}) -- waiting room
+wr = Waiting_Room:new()
+p = Process:new({name='registration', sources={arr}})
+
+function p:post_process()
+  local fam = self.queue:remove()
+  local provider = fam[1].provider
+  wr[provider] = wr[provider] or Queue:new()
+  wr[provider]:add(fam)
+end
+
+
+
 
 breaker=0
 while clock < Time.string_to_time('12:00') and breaker < 5000 do
-  wr:tick(sched)
+  arr:tick(sched)
   clock:advance_sec(secs_per_tick)
   breaker = breaker + 1
 end
