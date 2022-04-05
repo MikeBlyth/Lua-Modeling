@@ -1,171 +1,12 @@
 require 'utils'
+require 'tests'
 
-Time = {hr=0, min=0, sec=0, raw=0}
-Time.mt = {}
-
-function Time:new(o)
-  o = o or {}
-  setmetatable(o, Time.mt)
-  Time.mt.__index = self
-  Time.mt.__tostring = Time.tostring
-  if o.raw == 0 then
-    o:set_raw()
-  else
-    o:set_hms()
-  end
-  return o
-end
-
-function Time:set_raw()
-  self.raw = (self.hr or 0)*3600 + (self.min or 0)*60 + (self.sec or 0)
-end
-
-function Time:set_hms()
-  self.hr = math.floor(self.raw/3600)
-  self.min = math.floor((self.raw % 3600)/60)
-  self.sec = self.raw % 60
-end
-
-function Time:tostring()
-  return  string.format("%d:%02d:%02d", self.hr, self.min, self.sec)
-end
-
-function Time.get_raw(t)
-  -- t can be any table
-  if t.raw then
-    return t.raw
-  else
-    return (t.hr or 0)*3600 + (t.min or 0)*60 + (t.sec or 0)
-  end
-end
-
-function Time.add(a,b)
-  if getmetatable(a) ~= Time.mt then
-    error('Time.add requires Time object as first argument')
-  end
-  local result
-  if type(b) == 'number' then
-    result = Time:new({raw=a.raw + b})
-  else
-    result = Time:new({raw=a.raw+Time.get_raw(b)})
-  end
-  return result
-end
-
-function Time:advance_min(min)
-  if getmetatable(self) ~= Time.mt then
-    error('Time.add requires Time object as first argument')
-  end
-  self.raw = self.raw + min*60
-  self:set_hms()
-  self.check = 'OK'
-end
-
-function Time:advance_sec(sec)
-  if getmetatable(self) ~= Time.mt then
-    error('Time.add requires Time object as first argument')
-  end
-  self.raw = self.raw + sec
-  self:set_hms()
-  self.check = 'OK'
-end
-
-function Time.mt.__lt (a, b)
-  if not (a.raw and b.raw) then
-    error('Time comparison error - raw not defined for both objects')
-  end
-  return a.raw < b.raw
-end
-function Time.mt.__le (a, b)
-  if not (a.raw and b.raw) then
-    error('Time comparison error - raw not defined for both objects')
-  end
-  return a.raw <= b.raw
-end
-function Time.mt.__gt (a, b)
-  if not (a.raw and b.raw) then
-    error('Time comparison error - raw not defined for both objects')
-  end
-  return a.raw > b.raw
-end
-function Time.mt.__ge (a, b)
-  if not (a.raw and b.raw) then
-    error('Time comparison error - raw not defined for both objects')
-  end
-  return a.raw >= b.raw
-end
-function Time.mt.__eq (a, b)
-  if not (a.raw and b.raw) then
-    error('Time comparison error - raw not defined for both objects')
-  end
-  return a.raw == b.raw
-end
-function Time.mt.__ne (a, b)
-  if not (a.raw and b.raw) then
-    error('Time comparison error - raw not defined for both objects')
-  end
-  return a.raw ~= b.raw
-end
-Time.mt.__add = Time.add
-
-function Time.string_to_time(s)
-  local hr, min, sec
-  _, _, hr, min, sec = string.find(s,"([0-9][0-9]?):([0-9][0-9]):?(%d*)")
-  if hr == nil then error('Trying to convert invalid time literal ' .. s) end
-  if (sec==nil) or (sec=='') then sec='0' end
-  return Time:new({hr=hr, min=min, sec = sec})
-end
 
 
 function send_tick(obj, seconds)
   obj.tick(obj,seconds)
 end
 
-Queue = {first=0, last=-1}
-Queue.mt = {}
-
-function Queue:new (o)
-  o = o or {}   -- create object if user does not provide one
-  setmetatable(o, self.mt)
-  Queue.mt.__index = self
-  Queue.mt.__tostring = Queue.tostring
-  return o
-end
-
-function Queue:remove ()
-  if self.last < self.first then return nil end
-  self.first = self.first + 1
-  return self[self.first-1]
-end
-
-function Queue:add (item)
-    self.last = self.last + 1
-    self[self.last] = item
-end
-
-function Queue:length()
-    return self.last - self.first + 1
-end
-
-function Queue:tostring()
-  local str = '<<'
-  for i=self.first, self.last do
-    str = str .. tostring(self[i]) .. ', '
-  end
-  return str .. '>>'
-end
-
-function triangular(a, b, c)
--- a = low limit, b = high limit, c = mode
--- see https://bit.ly/3tVdfHD in Wikipedia
-  local u = math.random()
-  local inflex = (c-a)/(b-a)
-  if u < inflex then
-    return a + math.sqrt(u*(b-a)*(c-a))
-  else
-    return b - math.sqrt((1-u)*(b-a)*(b-c))
-  end
-end
 
 Patient = {age=0, visit='well', complexity=1}
 Patient.mt = {}
@@ -185,18 +26,13 @@ function Source:new(o)
   o.queue = Queue:new()
   o.destination = o.queue  -- will accumulate its own objects by default
   Source.mt.__index = self
+  Source.mt.__tostring = Source.tostring
   return o
 end
 
---[[
-function Source:tick(seconds)
-  spawn_per_sec = self.rate/3600
-  if math.random() < spawn_per_sec * seconds then
-   -- print('New person')
-    self.created_count = self.created_count + 1
-  end
+function Source:count()
+  return self.queue:length()
 end
---]]
 
 function Source:tick(schedule)
 -- Determine whether there are any new patients to insert
@@ -205,6 +41,16 @@ function Source:tick(schedule)
     self.destination:add(pt)
     self.created_count = self.created_count + 1
   end
+end
+
+function Source:next()
+-- return next set of patients (normally a single one)
+  return self.queue:remove()
+end
+
+function Source:tostring()
+  local str = 'Source queue with ' .. self:count() .. ' entries.'
+  return str
 end
 
 Appointment = {}
@@ -245,7 +91,7 @@ function Schedule:new(o)
     if math.random() < noshow then
       appt.arrival_time = Time.string_to_time('23:59')
     else
-      appt.arrival_time = appt.appt_time + 60*triangular(-10,0,20)
+      appt.arrival_time = appt.appt_time + 60*triangular(-10,0,40)
     end
   end
   return o
@@ -275,12 +121,57 @@ function Schedule:arrived()
   return new_arrivals
 end
 
+Resource = {name='anonymous', type='default', rlock=false}
+Resource.mt = {}
+
+function Resource:new(o)
+  o = o or {}
+  setmetatable(o, Resource.mt)
+  Resource.mt.__index = self
+  Resource.mt.__tostring = Resource.tostring
+  return o
+end
+
+function Resource:lock(user)
+  if self.rlock then return false end  -- resource already locked, not available
+  self.rlock = user or 'locked'
+  return self.rlock
+end
+
+function Resource:free(user)
+  if not (self.rlock and user) then -- user is nil or rlock is (nil or false)
+    self.rlock = false
+    return true
+  end
+  if (self.rlock == true) or (self.rlock == 'locked') then
+    self.rlock = false
+    return true
+  end
+  error ('Conflict: ' .. user .. ' trying to unlock resource ' .. self.name ..
+    ', lock is by ' .. self.rlock ..
+    '\nIf lock owner is specified, only that owner or anonymous can unlock ')
+end
+Resource.unlock = Resource.free
+
+
+function Resource:tostring()
+  local str
+  str = self.name .. ' ' .. self.type
+  local lock_word
+  if self.rlock then lock_word = self.rlock else lock_word = 'available' end
+  str = str .. ' (' .. lock_word .. ')'
+  return str
+end
+
+r = Resource:new({name='Maria', type='MA'})
+
 -- Init
 
 math.randomseed(os.time())
 secs_per_tick = 10
-clock = Time:new({hr=8, min=0, sec=0})
+clock = Time.string_to_time('8:00')
 noshow = 0.1
+
 
 sched = Schedule:new({
     {'8:00','well'}, {'8:00','well'},{'8:15','well'},{'8:15','well'},{'8:30','well'},
@@ -291,32 +182,13 @@ sched = Schedule:new({
 
 })
 
-function test_source()
 
-  wr = Source:new()
 
-  end_time = Time:new({hr=9})
-  created = {}
-  total_created = 0
-  test_runs = 1000
-  test_rate = 5
-  wr.rate = test_rate
-  for i=1,test_runs do
-    n = 0    -- to escape endless loops
-    clock = Time:new({hr=8, min=0, sec=0})
-    while clock <= end_time do
-    -- if (clock.raw % 600) == 0 then print(clock:tostring()) end
-      send_tick(wr, secs_per_tick)
-      clock = clock + {sec=secs_per_tick}
-      n = n + 1
-      if n > 1000 then break
-      end
-    end
-    -- print ("created " .. wr.created_count .. " patients.")
-    created[wr.created_count] = (created[wr.created_count] or 0) + 1
-    total_created = total_created + wr.created_count
-    wr.created_count = 0
-  end
-  for i = 1,10 do print(i, created[i] or 0) end
-  print ("Average per run = ", total_created/test_runs .. " error = " .. test_rate*test_runs/total_created)
+wr = Source:new() -- waiting room
+
+breaker=0
+while clock < Time.string_to_time('12:00') and breaker < 5000 do
+  wr:tick(sched)
+  clock:advance_sec(secs_per_tick)
+  breaker = breaker + 1
 end
