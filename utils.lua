@@ -223,12 +223,13 @@ function Time.string_to_time(s)
   return Time:new({hr=hr, min=min, sec = sec})
 end
 
-Queue = {first=0, last=-1}
+Queue = {first=1, last=0}
 Queue.mt = {}
 
 function Queue:new (o)
   o = o or {}   -- create object if user does not provide one
   setmetatable(o, self.mt)
+  o.last = table.getn(o)   -- this handles cases where an array is passed
   Queue.mt.__index = self
   Queue.mt.__tostring = Queue.tostring
   return o
@@ -252,6 +253,10 @@ end
 
 function Queue:length()
     return self.last - self.first + 1
+end
+
+function Queue:empty()
+    return self.last < self.first
 end
 
 function Queue:tostring()

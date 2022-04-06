@@ -162,7 +162,7 @@ function Resource:lock(user)
   return self.rlock
 end
 
-function Resource:free(user)
+function Resource:unlock(user)
   if not (self.rlock and user) then -- user is nil or rlock is (nil or false)
     self.rlock = false
     return true
@@ -175,7 +175,10 @@ function Resource:free(user)
     ', lock is by ' .. self.rlock ..
     '\nIf lock owner is specified, only that owner or anonymous can unlock ')
 end
-Resource.unlock = Resource.free
+
+function Resource:is_free()
+  return not self.rlock
+end
 
 
 function Resource:tostring()
@@ -191,6 +194,8 @@ r = Resource:new({name='Maria', type='MA'})
 Process = {name='process', sources={},
     in_process = nil, -- family currently in this process
     queue = Queue:new(),  -- for those who have finished process
+    required_resources = {},
+    current_resources = {},
     status='free',
     finish_time=Time.string_to_time('0:00'),
     post_process = function(p) return end
@@ -260,6 +265,55 @@ function Waiting_Room:new(o)
   return o
 end
 
+Resource_pool = {type=nil, count=0}
+Resource_pool.mt = {}
+
+function Resource_pool:new(o)
+  o = o or {}
+  o.members = o.members or {}
+  setmetatable(o, Resource_pool.mt)
+  Resource_pool.mt.__index = self
+  Resource_pool.mt.__tostring = Resource_pool.tostring
+  if (o.type and o.count) and o.count > 0 then
+    for i=1, o.count do
+      local name = o.type .. '_' .. i
+      o.members[i] = Resource:new({name=name, type=o.type})
+    end
+  end
+  return o
+end
+
+function Resource_pool:free_count()
+  local free = 0
+  for _, member in ipairs(self.members) do
+    if member:is_free() then free = free + 1 end
+  end
+  return free
+end
+
+function Resource_pool:request()
+  local free_members = {}
+  local fi = 0
+  local selected = nil
+  for _, member in ipairs(self.members) do
+    if member:is_free() then
+      fi = fi + 1
+      free_members[fi] = member
+    end
+  end
+  if fi > 0 then
+    selected = free_members[math.random(fi)]
+    selected:lock()
+  end
+  return selected
+end
+
+function Resource_pool:tostring()
+  s = 'Resource pool: ' .. 'type=' .. self.type .. ', count=' .. self.count ..
+    ', free=' .. self:free_count()
+  return s
+end
+
 
 
 -- Init
@@ -283,8 +337,8 @@ sched = Schedule:new({
 
 arr = Source:new({name='arrivals'}) -- waiting room
 wr = Waiting_Room:new()
-p = Process:new({name='registration', sources={arr}})
 
+p = Process:new({name='registration', sources={arr}})
 function p:post_process()
   local fam = self.queue:remove()
   local provider = fam[1].provider
@@ -294,10 +348,28 @@ end
 
 
 
-
+--[[
 breaker=0
 while clock < Time.string_to_time('12:00') and breaker < 5000 do
   arr:tick(sched)
   clock:advance_sec(secs_per_tick)
   breaker = breaker + 1
 end
+--]]
+
+ma_pool = Resource_pool:new({type="MA", count=2})
+vr_pool = Resource_pool:new({type='vitals_room', count=2})
+
+function Process:get_resources()
+  success = true
+  for _, pool in ipairs(self.required_resources) do
+    if pool:empty() then
+      return false
+    end
+  end
+
+  return true
+end
+
+vitals = Process:new({name='Vitals', required_resources={ma_pool, vr_pool}})
+  
