@@ -250,6 +250,12 @@ function Queue:peek_next()  -- just return next in line but don't remove from qu
   if self.last < self.first then return nil end
   return self[self.first]
 end
+Queue.peek_first = Queue.peek_next
+
+function Queue:peek_last()
+  if self.last < self.first then return nil end
+  return self[self.last]
+end
 
 function Queue:length()
     return self.last - self.first + 1
