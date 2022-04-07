@@ -49,7 +49,7 @@ function Source:new(o)
   return o
 end
 
-function Source:count()
+function Source:length()
   return self.queue:length()
 end
 
@@ -62,13 +62,14 @@ function Source:tick(schedule)
   end
 end
 
-function Source:next()
+function Source:remove()
 -- return next set of patients (normally a single one)
   return self.queue:remove()
 end
+Source.next = Source.remove
 
 function Source:tostring()
-  local str = 'Source "' .. (self.name or '?') .. '" with ' .. self:count() .. ' entries.'
+  local str = 'Source "' .. (self.name or '?') .. '" with ' .. self:length() .. ' entries.'
   return str
 end
 
@@ -193,7 +194,6 @@ r = Resource:new({name='Maria', type='MA'})
 
 Process = {name='process', sources={},
     in_process = nil, -- family currently in this process
-    queue = Queue:new(),  -- for those who have finished process
     status='free',
     duration_params= {type='triangular', min=3, max=15, mode=5},
     finish_time=Time.string_to_time('0:00'),
@@ -206,6 +206,7 @@ function Process:new(o)
   o = o or {}
   o.required_resources = o.required_resources or {}
   o.current_resources = o.current_resources or {}
+  o.queue = Queue:new()  -- for those who have finished process
   setmetatable(o, Process.mt)
   Process.mt.__index = self
   Process.mt.__tostring = Process.tostring
@@ -213,23 +214,28 @@ function Process:new(o)
 end
 
 function Process:tick()
+  print(self.name .. ' tick')
   if clock < self.finish_time then return end
   -- Time is up; release patients if there are any, mark self as free
   if self.in_process then
+    print(self.name .. ' finished')
     self:finish()
   end
   -- Check whether there are any patients waiting for this process
   local source_ready = self:patients_waiting() -- this queue has a patient ready
+  print(self.name .. ': source_ready = ' .. tostring(source_ready))
   if source_ready and self:resources_available() then
     self:start_process(source_ready)
   end
 end
 
 function Process:start_process(source)  -- source is a Source with a patient ready
-  self.in_process = source.queue:remove()  -- this is the family to process
+  self.in_process = source:remove()  -- this is the family to process
   self:get_resources()
   self.status = 'busy'
   self:set_completion_time(self.duration_params) -- when we'll be done with family
+  print('Starting ' .. self.name .. ' with ' .. self.in_process[1].name .. ' until '
+   .. tostring(self.finish_time))
 end
 
 function Process:set_completion_time(params)
@@ -254,7 +260,7 @@ end
 
 function Process:patients_waiting()
   for _,source in ipairs(self.sources) do
-    if source:count() > 0 then return source end
+    if source:length() > 0 then return source end
   end
   return false
 end
@@ -308,6 +314,31 @@ function Process:tostring()
   if in_use > '' then s = s .. '\n' .. in_use end
   return s
 end
+
+Provider = {type='Provider', name='Provider'}
+Provider.mt = {}
+
+function Provider:new(o)
+  o = o or {}
+  o.waiting_room = o.waiting_room or default_waiting_room
+  setmetatable(o, Provider.mt)
+  Provider.mt.__index = self
+  Provider.mt.__tostring = Provider.tostring
+  if o.waiting_room[o.name] then   -- already defined name -- make a variation
+    local suffix = 2
+    while o.waiting_room[o.name] do
+      o.name = o.name .. '_' .. suffix
+      suffix = suffix + 1
+    end
+  end
+  o.waiting_room[o.name] = Queue:new()
+  return o
+end
+
+function Provider:tostring()
+  return self.name .. '*'
+end
+
 
 Queue_for_Provider = {name='ProviderName'}
 Queue_for_Provider.mt = {}
@@ -400,6 +431,8 @@ secs_per_tick = 10
 clock = Time.string_to_time('8:00')
 noshow = 0.1
 
+wr = Waiting_Room:new()
+default_waiting_room = wr
 
 sched = Schedule:new({
     {'8:00','well'}, {'8:00','well'},{'8:15','well'},{'8:15','well'},{'8:30','well'},
@@ -411,7 +444,7 @@ sched = Schedule:new({
 })
 
 arr = Source:new({name='arrivals'}) -- waiting room
-wr = Waiting_Room:new()
+
 
 reg = Process:new({name='registration', sources={arr}})
 function reg:post_process(fam, waiting_room)
@@ -433,6 +466,7 @@ while clock < Time.string_to_time('12:00') and breaker < 5000 do
 end
 --]]
 
+providers = {Provider:new({name='ProviderA'})}
 ma_pool = Resource_pool:new({type="MA", count=2})
 vr_pool = Resource_pool:new({type='vitals_room', count=2})
 
@@ -451,15 +485,24 @@ function Process:get_resources()
   return true
 end
 
-vitals = Process:new({name='Vitals', required_resources={ma_pool, vr_pool}})
-vitals:get_resources()
+vitals = Process:new({name='Vitals', sources={wr.ProviderA},
+    required_resources={ma_pool, vr_pool},
+    duration_params={type='triangular', min=5, max=20, mode=7}
+  })
+--[[function vitals:tick()
+  print('vitals tick')
+  Process:tick()
+end
+--]]
 
 function clk()
   clocker(5)
   arr:tick(sched)
   reg:tick()
+  vitals:tick()
   print(clock)
   print(sched)
   print(arr)
   print(reg)
+  print(vitals)
 end
