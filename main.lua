@@ -7,6 +7,7 @@ function send_tick(obj, seconds)
   obj.tick(obj,seconds)
 end
 
+-------------------- PATIENTS AND FAMILIES -----------------------
 
 Patient = {age=0, visit='well', complexity=1}
 Patient.mt = {}
@@ -36,6 +37,8 @@ function Family:tostring()
   end
   return s .. '}'
 end
+
+---------- SOURCES -------------------------------
 
 Source = {name='source', obj=Patient, rate=5, created_count=0 }
 Source.mt = {}
@@ -73,6 +76,8 @@ function Source:tostring()
   return str
 end
 
+---------- APPOINTMENTS ----------------------------
+
 Appointment = {}
 Appointment.mt = {}
 
@@ -94,7 +99,7 @@ function Appointment:tostring()
     .. ' ' .. (self.status or ''))
 end
 
-appt = Appointment:new({'8:00','well'})
+--------- SCHEDULES --------------------------
 
 Schedule = {}
 Schedule.mt = {}
@@ -111,7 +116,7 @@ function Schedule:new(o)
     appt.id = next_id
     appt = Appointment:new(appt)
     appt.name = test_names[next_id]
-    appt.provider = 'ProviderA'
+    appt.provider = 'Provider'
     if math.random() < noshow then
       appt.arrival_time = Time.string_to_time('23:59')
     else
@@ -145,6 +150,8 @@ function Schedule:arrived()
   end
   return new_arrivals
 end
+
+----------- RESOURCES -------------------------------
 
 Resource = {name='anonymous', type='default', rlock=false}
 Resource.mt = {}
@@ -191,6 +198,8 @@ function Resource:tostring()
   return str
 end
 r = Resource:new({name='Maria', type='MA'})
+
+--------- PROCESSES ------------------------------------------------
 
 Process = {name='process', sources={},
     in_process = nil, -- family currently in this process
@@ -315,7 +324,20 @@ function Process:tostring()
   return s
 end
 
-Provider = {type='Provider', name='Provider'}
+
+-- Functions to make Processes act like source queues, using their internal 'queue' (patients finished with the process)
+
+function Process:length()
+  return self.queue:length()
+end
+
+function Process:remove()
+  return self.queue:remove()
+end
+
+---- PROVIDERS -----------------------------------------
+
+Provider = Resource:new({type='Provider', name='Provider'})
 Provider.mt = {}
 
 function Provider:new(o)
@@ -413,9 +435,25 @@ function Resource_pool:request()
   return selected
 end
 
+function Resource_pool:add(r)
+  if arrayContains(self.members,r) then
+    error ('Trying to add duplicate resource ' .. r .. ' to resource pool ' ..
+      self.name)
+  end
+  if r==nil then
+    error ('Trying to add nil value to resource pool ' .. self.type)
+  end
+  table.insert(self.members, r)
+  self.count = self.count + 1
+end
+
 function Resource_pool:tostring()
   s = 'Resource pool: ' .. 'type=' .. self.type .. ', count=' .. self.count ..
     ', free=' .. self:free_count()
+  s = s .. '\n'
+  for i,res in ipairs(self.members) do
+    s = s .. tostring(res) .. ','
+  end
   return s
 end
 
@@ -466,9 +504,13 @@ while clock < Time.string_to_time('12:00') and breaker < 5000 do
 end
 --]]
 
-providers = {Provider:new({name='ProviderA'})}
+Provider = Provider:new({name='Provider'})
+provider_pool = Resource_pool:new({type='Provider', count=0})
+provider_pool:add(Provider)
 ma_pool = Resource_pool:new({type="MA", count=2})
 vr_pool = Resource_pool:new({type='vitals_room', count=2})
+room_pool = Resource_pool:new({type='exam room', count=4})
+
 
 function Process:get_resources()
   success = true
@@ -485,24 +527,12 @@ function Process:get_resources()
   return true
 end
 
-vitals = Process:new({name='Vitals', sources={wr.ProviderA},
+vitals = Process:new({name='Vitals', sources={wr.Provider},
     required_resources={ma_pool, vr_pool},
     duration_params={type='triangular', min=5, max=20, mode=7}
   })
---[[function vitals:tick()
-  print('vitals tick')
-  Process:tick()
-end
---]]
 
-function clk()
-  clocker(5)
-  arr:tick(sched)
-  reg:tick()
-  vitals:tick()
-  print(clock)
-  print(sched)
-  print(arr)
-  print(reg)
-  print(vitals)
-end
+exam = Process:new({name='Provider exam', sources={vitals},
+    required_resources={provider_pool, room_pool},
+    duration_params={type='triangular', min=5, max=40, mode=10},
+  })
