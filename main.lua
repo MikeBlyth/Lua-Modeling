@@ -9,7 +9,7 @@ end
 
 -------------------- PATIENTS AND FAMILIES -----------------------
 
-Patient = {age=0, visit='well', complexity=1}
+Patient = {age=0, visit='well', complexity=1, new=false}
 Patient.mt = {}
 function Patient:new(o)
   o = o or {}
@@ -105,12 +105,16 @@ Schedule = {}
 Schedule.mt = {}
 
 function Schedule:new(o)
+  -- o is an array of appointment slots like
+  --sched = Schedule:new({
+  --  {'8:00','well'}, {'8:00','well'},{'8:15','well'},{'8:15','well'},{'8:30','well'}}
   o = o or {}
   setmetatable(o, Schedule.mt)
   Schedule.mt.__index = self
   Schedule.mt.__tostring = Schedule.tostring
   local next_id = 0
-  -- This is just for generating a test schedule ---------------
+
+  -- generate a test schedule by inserting patients  and arrival time ---------------
   for _, appt in ipairs(o) do
     next_id = next_id + 1
     appt.id = next_id
@@ -239,6 +243,7 @@ function Process:tick()
 end
 
 function Process:start_process(source)  -- source is a Source with a patient ready
+  -- Process gets a patient from Queue or other object that has Remove method
   self.in_process = source:remove()  -- this is the family to process
   self:get_resources()
   self.status = 'busy'
@@ -295,8 +300,7 @@ end
 
 function Process:finish()
   if self.in_process then
-    local finished_fam = self.in_process
-    self.queue:add(self.in_process) -- move current patient to finished queue
+    self:move_to_finished()
   end
   self.in_process = nil
   -- release Resources
@@ -306,6 +310,11 @@ function Process:finish()
   self.current_resources = {}
   self.status='free'
   self:post_process(finished_fam)
+end
+
+function Process:move_to_finished()
+  local finished_fam = self.in_process
+  self.queue:add(self.in_process) -- move current patient to finished queue
 end
 
 function Process:tostring()
@@ -334,6 +343,59 @@ end
 function Process:remove()
   return self.queue:remove()
 end
+
+-------- BRANCHES --------------------------------------
+
+Branch = Process:new({name=process, duration_params={type='fixed', 0}})
+Branch.mt = {}
+
+function Branch:new(o)
+  -- A Branch is a special process that simply takes a patient from its source and
+  -- moves it into one of several output (finished) queues. Functions as a choice point.
+  -- For example, used to route some patients into getting vaccines after their exam,
+  -- while others are finished their visit.
+  -- To use, just (1) create the Branch like
+  -- post_exam = Branch:new({name='Post-exam', branches={'vax','done'}, sources={exam}, [default_branch='done']})
+  -- (2) create a select() function which will return the name of the branch to be assigned for this patient, e.g.
+  --  function post_exam:select()
+  --    if math.random() > 0.1 then return('done') else return ('vax') end
+  --  end
+
+  o = o or {}
+  local branches = o.branches
+  o.branches = {}
+  o.queue = nil  -- branches rather than queue is used in a Branch
+  setmetatable(o, Branch.mt)
+  Branch.mt.__index = self
+  Branch.mt.__tostring = Branch.tostring
+  for _,branch in ipairs(branches) do
+    o.branches[branch] = Queue:new()  -- create destination queue with key=branch
+  end
+  return o
+end
+
+function Branch:move_to_finished()
+  -- same as Process:move_to_finished but puts finished patient in one of the branches.
+  local finished_fam = self.in_process
+  self.branches[self:select()]:add(self.in_process) -- move to default finished queue
+end
+
+function Branch:select()
+  if self.default_branch == nil then
+    error('Branch ' .. self.name .. ' has no default branch or select function.')
+  end
+  return self.default_branch
+end
+
+function Branch:tostring()
+  s = 'Branch ' .. self.name .. ': '
+  for br,queue in pairs(self.branches) do
+    s = s .. br .. '=' .. queue:length() .. ', '
+  end
+  return s
+end
+
+
 
 ---- PROVIDERS -----------------------------------------
 
@@ -374,6 +436,8 @@ function Queue_for_Provider:new(o)
   return o
 end
 
+------------- WAITING ROOM -----------------------
+
 Waiting_Room = {}
 Waiting_Room.mt = {}
 
@@ -381,7 +445,7 @@ function Waiting_Room:new(o)
   o = o or {}
   setmetatable(o, Waiting_Room.mt)
   Waiting_Room.mt.__index = self
---  Waiting_Room.mt.__tostring = Waiting_Room.tostring
+  Waiting_Room.mt.__tostring = Waiting_Room.tostring
   return o
 end
 
@@ -391,6 +455,20 @@ function Waiting_Room:add(fam) -- add a family to a provider queue in waiting ro
   wr[provider]:add(fam)
 end
 
+function Waiting_Room:length()
+  local n = 0
+  for _, provider in pairs(self) do
+    if provider.mt == Queue.mt then
+      n = n + provider:length()
+    end
+  end
+  return n
+end
+
+function Waiting_Room:tostring()
+  return "Waiting room: " .. self:length() .. ' patients'
+end
+--------- RESOURCE POOL ----------------------
 
 Resource_pool = {type=nil, count=0}
 Resource_pool.mt = {}
@@ -457,10 +535,6 @@ function Resource_pool:tostring()
   return s
 end
 
---
-function clocker(n)
-  clock:advance_min(n)
-end
 
 -- Init
 
@@ -481,9 +555,9 @@ sched = Schedule:new({
 
 })
 
-arr = Source:new({name='arrivals'}) -- waiting room
+arr = Source:new({name='arrivals'}) -- patients entering the registration queue
 
-
+-- Registration desk (haven't set up yet to require resources -- assume available)
 reg = Process:new({name='registration', sources={arr}})
 function reg:post_process(fam, waiting_room)
   waiting_room = waiting_room or wr -- for now only one waiting room, so default to this
@@ -492,17 +566,6 @@ function reg:post_process(fam, waiting_room)
   end
   self.queue = Queue:new()
 end
-
-
-
---[[
-breaker=0
-while clock < Time.string_to_time('12:00') and breaker < 5000 do
-  arr:tick(sched)
-  clock:advance_sec(secs_per_tick)
-  breaker = breaker + 1
-end
---]]
 
 Provider = Provider:new({name='Provider'})
 provider_pool = Resource_pool:new({type='Provider', count=0})
@@ -536,3 +599,8 @@ exam = Process:new({name='Provider exam', sources={vitals},
     required_resources={provider_pool, room_pool},
     duration_params={type='triangular', min=5, max=40, mode=10},
   })
+
+post_exam = Branch:new({name='Post-exam', branches={'vax','done'}, sources={exam}, default_branch='done'})
+function post_exam:select()
+  if math.random() > 0.5 then return('done') else return ('vax') end
+end

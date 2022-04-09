@@ -43,3 +43,23 @@ test_names = {
   'Javier', 'Austin', 'Carelle', 'Mohandes', 'Jamie', 'Burk', 'Silvie', 'Kermit',
   'Vlad', 'Sage', 'Kennedy', 'Brawnwyn', 'Silver', "Precious", "Hope", 'Jon'
 }
+
+function clk()
+  clocker(5)
+  arr:tick(sched)
+  reg:tick()
+  vitals:tick()
+  exam:tick()
+  print(clock)
+  print(sched)
+  print(arr)
+  print(reg)
+  print(wr)
+  print(vitals)
+  print(exam)
+end
+
+
+function clocker(n)
+  clock:advance_min(n)
+end
