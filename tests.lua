@@ -1,3 +1,5 @@
+print ('loading tests')
+
 function test_source()
 -- used mainly to check random arrival of patients
   wr = Source:new()
@@ -38,11 +40,7 @@ spawn_per_sec = self.rate/3600
   end
 end
 --]]
-test_names = {
-  'Maria', 'Robert', 'Calvin', 'Xochilt', 'Forest', 'Agnes', 'Steven', 'Blessing',
-  'Javier', 'Austin', 'Carelle', 'Mohandes', 'Jamie', 'Burk', 'Silvie', 'Kermit',
-  'Vlad', 'Sage', 'Kennedy', 'Brawnwyn', 'Silver', "Precious", "Hope", 'Jon'
-}
+
 
 function clk()
   clocker(5)
