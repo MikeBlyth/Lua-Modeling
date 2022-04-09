@@ -49,6 +49,7 @@ function clk()
   vitals:tick()
   exam:tick()
   post_exam:tick()
+  discharged:tick()
   print(clock)
   print(sched)
   print(arr)
@@ -57,6 +58,7 @@ function clk()
   print(vitals)
   print(exam)
   print(post_exam)
+  print(discharged)
   pe = post_exam
 end
 

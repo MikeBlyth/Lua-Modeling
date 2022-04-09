@@ -56,3 +56,6 @@ post_exam = Branch:new({name='Post-exam', branches={'vax','done'}, sources={exam
 function post_exam:select()
   if math.random() > 0.5 then return('done') else return ('vax') end
 end
+
+discharged = Sink:new({name='discharged', sources={post_exam.branches['vax'], post_exam.branches['done']}})
+-- d = Sink:new({sources={post_exam}})

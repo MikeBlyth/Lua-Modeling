@@ -11,12 +11,12 @@ test_names = {
 }
 
 Patient = {age=0, visit='well', complexity=1, new=false}
-Patient.mt = {}
+
 function Patient:new(o)
   o = o or {}
-  setmetatable(o, Patient.mt)
-  Patient.mt.__index = self
-  Patient.mt.__tostring = Patient.tostring
+  setmetatable(o, self)
+  Patient.__index = self
+  Patient.__tostring = Patient.tostring
   return o
 end
 
@@ -25,14 +25,13 @@ function Patient:tostring()
 end
 
 Family = {}
-Family.mt = {}
 
 function Family:new(o)
 -- A family is the set of children belonging together (sibs) on a visit
   o = o or {}
-  setmetatable(o, Family.mt)
-  Family.mt.__index = self
-  Family.mt.__tostring = Family.tostring
+  setmetatable(o, self)
+  Family.__index = self
+  Family.__tostring = Family.tostring
   return o
 end
 
@@ -47,14 +46,14 @@ end
 ---------- SOURCES -------------------------------
 
 Source = {name='source', obj=Patient, rate=5, created_count=0 }
-Source.mt = {}
+
 function Source:new(o)
   o = o or {}
-  setmetatable(o, Source.mt)
+  setmetatable(o, self)
   o.queue = Queue:new()
   o.destination = o.queue  -- will accumulate its own objects by default
-  Source.mt.__index = self
-  Source.mt.__tostring = Source.tostring
+  Source.__index = self
+  Source.__tostring = Source.tostring
   return o
 end
 
@@ -85,13 +84,12 @@ end
 ---------- APPOINTMENTS ----------------------------
 
 Appointment = {}
-Appointment.mt = {}
 
 function Appointment:new(o)
   o = o or {}
-  setmetatable(o, Appointment.mt)
-  Appointment.mt.__index = self
-  Appointment.mt.__tostring = Appointment.tostring
+  setmetatable(o, self)
+  Appointment.__index = self
+  Appointment.__tostring = Appointment.tostring
   o.appt_time = Time.string_to_time(o[1])
   o.appt_type = o[2]
   return o
@@ -108,16 +106,15 @@ end
 --------- SCHEDULES --------------------------
 
 Schedule = {}
-Schedule.mt = {}
 
 function Schedule:new(o)
   -- o is an array of appointment slots like
   --sched = Schedule:new({
   --  {'8:00','well'}, {'8:00','well'},{'8:15','well'},{'8:15','well'},{'8:30','well'}}
   o = o or {}
-  setmetatable(o, Schedule.mt)
-  Schedule.mt.__index = self
-  Schedule.mt.__tostring = Schedule.tostring
+  setmetatable(o, self)
+  Schedule.__index = self
+  Schedule.__tostring = Schedule.tostring
   local next_id = 0
 
   -- generate a test schedule by inserting patients  and arrival time --------------
@@ -169,13 +166,12 @@ end
 ----------- RESOURCES -------------------------------
 
 Resource = {name='anonymous', type='default', rlock=false}
-Resource.mt = {}
 
 function Resource:new(o)
   o = o or {}
-  setmetatable(o, Resource.mt)
-  Resource.mt.__index = self
-  Resource.mt.__tostring = Resource.tostring
+  setmetatable(o, self)
+  Resource.__index = self
+  Resource.__tostring = Resource.tostring
   return o
 end
 
@@ -223,17 +219,15 @@ Process = {name='process', sources={},
     finish_time=Time.string_to_time('0:00'),
     post_process = function(p) return end  -- dummy
 }
-Process.mt = {}
-
 
 function Process:new(o)
   o = o or {}
   o.required_resources = o.required_resources or {}
   o.current_resources = o.current_resources or {}
   o.queue = Queue:new()  -- for those who have finished process
-  setmetatable(o, Process.mt)
-  Process.mt.__index = self
-  Process.mt.__tostring = Process.tostring
+  setmetatable(o, self)
+  self.__index = self
+  self.__tostring = self.tostring
   return o
 end
 
@@ -370,10 +364,23 @@ function Process:remove()
   return self.queue:remove()
 end
 
+------------- SINKS --- Just a process that does nothing except move from source to sink.queue
+Sink = Process:new()
+
+function Sink:tick()
+  while self:patients_waiting() do
+    self.queue:add(self:patients_waiting():remove())
+  end
+end
+
+function Sink:tostring()
+  return self.name .. ': ' ..self:length()
+end
+
+
 -------- BRANCHES --------------------------------------
 
 Branch = Process:new({name=process, duration_params={type='fixed', 0}})
-Branch.mt = {}
 
 function Branch:new(o)
   -- A Branch is a special process that simply takes a patient from its source and
@@ -391,9 +398,9 @@ function Branch:new(o)
   local branches = o.branches
   o.branches = {}
   o.queue = nil  -- branches rather than queue is used in a Branch
-  setmetatable(o, Branch.mt)
-  Branch.mt.__index = self
-  Branch.mt.__tostring = Branch.tostring
+  setmetatable(o, self)
+  Branch.__index = self
+  Branch.__tostring = Branch.tostring
   for _,branch in ipairs(branches) do
     o.branches[branch] = Queue:new()  -- create destination queue with key=branch
   end
@@ -426,14 +433,13 @@ end
 ---- PROVIDERS -----------------------------------------
 
 Provider = Resource:new({type='Provider', name='Provider'})
-Provider.mt = {}
 
 function Provider:new(o)
   o = o or {}
   o.waiting_room = o.waiting_room or default_waiting_room
-  setmetatable(o, Provider.mt)
-  Provider.mt.__index = self
-  Provider.mt.__tostring = Provider.tostring
+  setmetatable(o, self)
+  Provider.__index = self
+  Provider.__tostring = Provider.tostring
   if o.waiting_room[o.name] then   -- already defined name -- make a variation
     local suffix = 2
     while o.waiting_room[o.name] do
@@ -451,13 +457,12 @@ end
 
 
 Queue_for_Provider = {name='ProviderName'}
-Queue_for_Provider.mt = {}
 
 function Queue_for_Provider:new(o)
   o = o or {}
-  setmetatable(o, Queue_for_Provider.mt)
-  Queue_for_Provider.mt.__index = self
-  Queue_for_Provider.mt.__tostring = Queue_for_Provider.tostring
+  setmetatable(o, self)
+  Queue_for_Provider.__index = self
+  Queue_for_Provider.__tostring = Queue_for_Provider.tostring
   o.queue = Queue:new()
   return o
 end
@@ -465,13 +470,12 @@ end
 ------------- WAITING ROOM -----------------------
 
 Waiting_Room = {}
-Waiting_Room.mt = {}
 
 function Waiting_Room:new(o)
   o = o or {}
-  setmetatable(o, Waiting_Room.mt)
-  Waiting_Room.mt.__index = self
-  Waiting_Room.mt.__tostring = Waiting_Room.tostring
+  setmetatable(o, self)
+  Waiting_Room.__index = self
+  Waiting_Room.__tostring = Waiting_Room.tostring
   return o
 end
 
@@ -484,7 +488,7 @@ end
 function Waiting_Room:length()
   local n = 0
   for _, provider in pairs(self) do
-    if provider.mt == Queue.mt then
+    if is_instance_of(provider, Queue) then
       n = n + provider:length()
     end
   end
@@ -497,14 +501,13 @@ end
 --------- RESOURCE POOL ----------------------
 
 Resource_pool = {type=nil, count=0}
-Resource_pool.mt = {}
 
 function Resource_pool:new(o)
   o = o or {}
   o.members = o.members or {}
-  setmetatable(o, Resource_pool.mt)
-  Resource_pool.mt.__index = self
-  Resource_pool.mt.__tostring = Resource_pool.tostring
+  setmetatable(o, Resource_pool)
+  Resource_pool.__index = self
+  Resource_pool.__tostring = Resource_pool.tostring
   if (o.type and o.count) and o.count > 0 then
     for i=1, o.count do
       local name = o.type .. '_' .. i

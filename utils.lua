@@ -285,6 +285,10 @@ function triangular(a, b, c)
   end
 end
 
+function is_instance_of(a,b)
+  return getmetatable(a) == getmetatable(b) or getmetatable(a) == b
+end
+
 ----------======== VECTORS ========-------------
 
 function rotate(v, angle)  -- 2d rotation of standard TTS position vector
