@@ -36,7 +36,7 @@ function Family:new(o)
 end
 
 function Family:tostring()
-  s = '{'
+  local s = '{'
   for _,pt in ipairs(self) do
     s = s .. tostring(pt) .. ', '
   end
@@ -129,7 +129,7 @@ function Schedule:new(o)
     appt = Appointment:new(appt)
     -- appt.name = test_names[next_id]
     -- appt.provider = 'Provider'
-    if math.random() < noshow then
+    if math.random() < No_show then
       appt.arrival_time = Time.string_to_time('23:59')
     else
       appt.arrival_time = appt.appt_time + 60*triangular(-10,0,40)
@@ -140,7 +140,7 @@ function Schedule:new(o)
 end
 
 function Schedule:tostring()
-  str = ''
+  local str = ''
   for _, appt in ipairs(self) do
     str = str .. tostring(appt) .. "\n"
   end
@@ -148,13 +148,13 @@ function Schedule:tostring()
 end
 
 function Schedule:arrived()
--- Compare clock with each appointment arrival time
+-- Compare Clock with each appointment arrival time
 -- Return table of patients who are newly arrived (arrival_time > clock), and
 --   mark those appointments as arrived
   local new_arrivals = {}
-  new_arrival_count = 0
+  local new_arrival_count = 0
   for _, appt in ipairs(self) do
-    if appt.arrival_time <= clock and appt.status == nil then
+    if appt.arrival_time <= Clock and appt.status == nil then
       new_arrival_count = new_arrival_count + 1
       new_arrivals[new_arrival_count] = appt.pt
       appt.status = 'arrived'
@@ -208,22 +208,24 @@ function Resource:tostring()
   str = str .. ' (' .. lock_word .. ')'
   return str
 end
-r = Resource:new({name='Maria', type='MA'})
+--r = Resource:new({name='Maria', type='MA'})
 
 --------- PROCESSES ------------------------------------------------
 
 Process = {name='process', sources={},
-    in_process = nil, -- family currently in this process
+    in_process = nil, -- families currently in this process
     status='free',
     duration_params= {type='triangular', min=3, max=15, mode=5},
-    finish_time=Time.string_to_time('0:00'),
-    post_process = function(p) return end  -- dummy
+--    finish_time=Time.string_to_time('0:00'),
+    required_resources = nil,
+    post_process = function(p) end  -- dummy
 }
 
 function Process:new(o)
   o = o or {}
+  o.in_process = Set:new{}
   o.required_resources = o.required_resources or {}
-  o.current_resources = o.current_resources or {}
+--  o.current_resources = o.current_resources or {}
   o.queue = Queue:new()  -- for those who have finished process
   setmetatable(o, self)
   self.__index = self
@@ -232,34 +234,38 @@ function Process:new(o)
 end
 
 function Process:tick()
-  print(self.name .. ' tick')
-  if clock < self.finish_time then return end
-  -- Time is up; release patients if there are any, mark self as free
-  if self.in_process then
-    print(self.name .. ' finished')
-    self:finish()
-  end
   -- Check whether there are any patients waiting for this process
   local source_ready = self:patients_waiting() -- this queue has a patient ready
-  print(self.name .. ': source_ready = ' .. tostring(source_ready))
-  if source_ready and self:resources_available() then
-    self:start_process(source_ready)
+  print(self.name .. ' tick: source_ready = ' .. tostring(source_ready or 'none'))
+  while source_ready and self:resources_available() do  -- add family to this process
+    self:start_process(source_ready:remove())
+    source_ready = self:patients_waiting()
   end
+
+  -- release any families whose time is completed
+  for fam, _ in pairs(self.in_process) do
+    if Clock > fam.completion_time then
+      self:release_fam(fam)
+    end
+  end
+  self:post_process()
 end
 
-function Process:start_process(source)  -- source is a Source with a patient ready
-  -- Process gets a patient from Queue or other object that has Remove method
-  self.in_process = source:remove()  -- this is the family to process
-  self:get_resources()
-  self.status = 'busy'
-  self:set_completion_time(self.duration_params) -- when we'll be done with family
-  print('Starting ' .. self.name .. ' with ' .. self.in_process[1].name .. ' until '
-   .. tostring(self.finish_time))
+function Process:start_process(next_fam)
+  -- Add next_family to the in_process list of this process
+  if next_fam == nil then error('Trying to add nil pt to process' .. self.name) end
+  next_fam.resources = self:get_resources()   -- insert resources into family and mark as in use
+  next_fam.completion_time = self:calc_completion_time(next_fam) -- when we'll be done with family
+  print('Starting ' .. self.name .. ' with ' .. next_fam[1].name .. ' until '
+   .. tostring(next_fam.finish_time))
+  self.in_process[next_fam] = true  -- add to set of the families currently in this process 
 end
 
-function Process:set_completion_time(params)
-  -- can override with custom function
+function Process:calc_completion_time(fam)
+  -- fam is used as input parameter for when we want to use patient attributes to calc time.
+  -- Can override with custom function
   local duration
+  local params = self.duration_params
   if params.type=='triangular' and params.min and params.max and params.mode then
     duration = triangular(params.min, params.max, params.mode) -- duration in min
   end
@@ -272,9 +278,8 @@ function Process:set_completion_time(params)
   if not duration then
     error('Invalid duration specs for process' .. self.name)
   end
-  self.finish_time = clock + Time:new({min=duration})
+  return Clock + Time:new({min=duration})
 end
---]]
 
 
 function Process:patients_waiting()
@@ -294,62 +299,34 @@ function Process:resources_available()
 end
 
 function Process:get_resources()
+  local resources = {}
   if not self:resources_available() then return nil end
   for _, pool in ipairs(self.required_resources) do
     -- obtain resource from pool
-    local res = pool:request()
-    table.insert(self.current_resources, res)
+    table.insert(resources, pool:request())
   end
-  return true
+  return resources
 end
 
-function Process:finish()
-  if self.in_process then
-    self:move_to_finished()
-  end
-  self.in_process = nil
+function Process:release_fam(fam)
+  self.queue:add(fam) -- move current patient to finished queue
+  self.in_process[fam] = nil   -- delete from in_process
   -- release Resources
-  for _,res in ipairs(self.current_resources) do
+  for _,res in ipairs(fam.resources) do
     res:unlock()
   end
-  self.current_resources = {}
-  self.status='free'
-  self:post_process(finished_fam)
-end
-
-function Process:move_to_finished()
-  local finished_fam = self.in_process
-  self.queue:add(self.in_process) -- move current patient to finished queue
-end
-
-function Process:get_resources()
-  success = true
-  for _, pool in ipairs(self.required_resources) do
-    if pool:free_count() == 0 then
-      return false
-    end
-  end
-  for _, pool in ipairs(self.required_resources) do
-    -- obtain resource from pool
-    local res = pool:request()
-    table.insert(self.current_resources, res)
-  end
-  return true
+  fam.current_resources = {}
+--  self:post_process(finished_fam)
 end
 
 function Process:tostring()
-  s = 'Process: "' .. self.name .. '"'
-  if self.status == 'free' then
-    s = s .. ' (free).'
-  else
-    s = s .. ', with ' .. tostring(self.in_process) .. ' until ' .. tostring(self.finish_time) .. '.'
-  end
+  local s = 'Process: "' .. self.name .. '": ' .. tableSize(self.in_process) .. ' families waiting'
   s = s .. '\nFinished queue has ' .. self.queue:length() .. ' entries.'
-  local in_use = 'Resources in use: '
-  for _, res in ipairs(self.current_resources) do
-    in_use = in_use .. tostring(res) .. ', '
-  end
-  if in_use > '' then s = s .. '\n' .. in_use end
+  -- local in_use = 'Resources in use: '
+  -- for _, res in ipairs(self.current_resources) do
+  --   in_use = in_use .. tostring(res) .. ', '
+  -- end
+  -- if in_use > '' then s = s .. '\n' .. in_use end
   return s
 end
 
@@ -380,7 +357,7 @@ end
 
 -------- BRANCHES --------------------------------------
 
-Branch = Process:new({name=process, duration_params={type='fixed', 0}})
+Branch = Process:new({name='Branch', duration_params={type='fixed', 0}})
 
 function Branch:new(o)
   -- A Branch is a special process that simply takes a patient from its source and
@@ -421,7 +398,7 @@ function Branch:select()
 end
 
 function Branch:tostring()
-  s = 'Branch ' .. self.name .. ': '
+  local s = 'Branch ' .. self.name .. ': '
   for br,queue in pairs(self.branches) do
     s = s .. br .. '=' .. queue:length() .. ', '
   end
@@ -436,7 +413,7 @@ Provider = Resource:new({type='Provider', name='Provider'})
 
 function Provider:new(o)
   o = o or {}
-  o.waiting_room = o.waiting_room or default_waiting_room
+  o.waiting_room = o.waiting_room or Default_waiting_room
   setmetatable(o, self)
   Provider.__index = self
   Provider.__tostring = Provider.tostring
@@ -555,7 +532,7 @@ function Resource_pool:add(r)
 end
 
 function Resource_pool:tostring()
-  s = 'Resource pool: ' .. 'type=' .. self.type .. ', count=' .. self.count ..
+  local s = 'Resource pool: ' .. 'type=' .. self.type .. ', count=' .. self.count ..
     ', free=' .. self:free_count()
   s = s .. '\n'
   for i,res in ipairs(self.members) do

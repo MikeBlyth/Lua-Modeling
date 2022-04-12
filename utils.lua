@@ -1,23 +1,28 @@
+---@diagnostic disable: lowercase-global
 -- UTILITIES AND DEBUGGING
 
 function dump(o) -- modified
-    if o == nil then return 'nil' end
-    if type(o) == 'table' then
-      local s = '{ '
-      if tableIsArray(o) then
-        for _, v in ipairs(o) do
-          s = s .. dump(v) .. ', '
-        end
-      else
-        for k,v in pairs(o) do
-          if type(k) ~= 'number' then k = '"'..k..'"' end
-          s = s .. '['..k..']=' .. dump(v) .. ', '
-        end
+  if o == nil then return 'nil' end
+  if type(o) == 'table' then
+    local s = '{ '
+    if tableIsArray(o) then
+      for _, v in ipairs(o) do
+        s = s .. dump(v) .. ', '
       end
-      return s .. '} '
     else
-      return tostring(o)
+      for k,v in pairs(o) do
+        if type(k) == 'table' then 
+          k = dump(k) 
+        else
+          if type(k) ~= 'number' then k = '"'..k..'"' end
+        end
+        s = s .. '['..k..']=' .. dump(v) .. ', '
+      end
     end
+    return s .. '} '
+  else
+    return tostring(o)
+  end
 end
 
 function pdump(o, s)
@@ -83,7 +88,7 @@ end
 
 function tableSize(t)
   local size = 0
-  for _, _ in ipairs(t) do size = size + 1 end
+  for _, _ in pairs(t) do size = size + 1 end
   return size
 end
 
@@ -237,8 +242,10 @@ end
 
 function Queue:remove ()
   if self.last < self.first then return nil end
+  local removed = self[self.first]
+  self[self.first]=nil
   self.first = self.first + 1
-  return self[self.first-1]
+  return removed
 end
 
 function Queue:add (item)
@@ -263,6 +270,11 @@ end
 
 function Queue:empty()
     return self.last < self.first
+end
+
+function Queue:truncate()
+  self.first=0
+  self.last=1
 end
 
 function Queue:tostring()
@@ -292,10 +304,13 @@ end
 ----------======== VECTORS ========-------------
 
 function rotate(v, angle)  -- 2d rotation of standard TTS position vector
-    local rad = angle * deg2rad
+    local rad = angle * math.pi/180
     local sin = math.sin(rad)
     local cos = math.cos(rad)
     local x2 = (cos * v.x) - (sin * v.z)
     local z2 = (sin * v.x) + (cos * v.z)
     return Vector(x2, v.y, z2)
 end
+
+-- for testing
+q = Queue:new()

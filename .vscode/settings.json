@@ -1,0 +1,18 @@
+{
+    "Lua.diagnostics.globals": [
+        "send_tick",
+        "test_names",
+        "dump",
+        "pdump",
+        "test_source",
+        "wr",
+        "end_time",
+        "created",
+        "total_created",
+        "test_runs",
+        "test_rate",
+        "clk",
+        "pe",
+        "clocker"
+    ]
+}

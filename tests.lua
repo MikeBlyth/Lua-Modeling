@@ -11,12 +11,12 @@ function test_source()
   test_rate = 5
   wr.rate = test_rate
   for i=1,test_runs do
-    n = 0    -- to escape endless loops
-    clock = Time:new({hr=8, min=0, sec=0})
-    while clock <= end_time do
-    -- if (clock.raw % 600) == 0 then print(clock:tostring()) end
-      send_tick(wr, secs_per_tick)
-      clock = clock:advance_sec(secs_per_tick)
+    local n = 0    -- to escape endless loops
+    Clock = Time:new({hr=8, min=0, sec=0})
+    while Clock <= end_time do
+    -- if (Clock.raw % 600) == 0 then print(Clock:tostring()) end
+      send_tick(wr, Secs_per_tick)
+      Clock = Clock:advance_sec(Secs_per_tick)
       n = n + 1
       if n > 1000 then break
       end
@@ -50,7 +50,7 @@ function clk()
   exam:tick()
   post_exam:tick()
   discharged:tick()
-  print(clock)
+  print(Clock)
   print(sched)
   print(arr)
   print(reg)
@@ -64,5 +64,5 @@ end
 
 
 function clocker(n)
-  clock:advance_min(n)
+  Clock:advance_min(n)
 end
