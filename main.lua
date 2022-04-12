@@ -1,5 +1,15 @@
-print ('loading main')
-require 'utils'
+ print ('loading main')
+
+
+--[[
+local path = arg[0]:match(".*\\")
+
+require (path .. 'utils')
+require (path .. 'defs.lua')
+require (path .. 'tests.lua')
+--]]
+
+require "utils"
 require 'defs'
 require 'tests'
 
@@ -42,7 +52,7 @@ vr_pool = Resource_pool:new({type='vitals_room', count=2})
 room_pool = Resource_pool:new({type='exam room', count=4})
 
 
-vitals = Process:new({name='Vitals', sources={wr.Provider},
+vitals = Process:new({name='Vitals', sources={wr.Provider}, 
     required_resources={ma_pool, vr_pool},
     duration_params={type='triangular', min=5, max=20, mode=7}
   })
@@ -59,3 +69,4 @@ end
 
 discharged = Sink:new({name='discharged', sources={post_exam.branches['vax'], post_exam.branches['done']}})
 -- d = Sink:new({sources={post_exam}})
+clk()
