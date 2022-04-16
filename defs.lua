@@ -10,7 +10,7 @@ test_names = {
   'Vlad', 'Sage', 'Kennedy', 'Brawnwyn', 'Silver', "Precious", "Hope", 'Jon'
 }
 
-Patient = {age=0, visit='well', complexity=1, new=false}
+Patient = {age=0, visit='well', complexity=1, new=false, provider='Provider'}
 
 function Patient:new(o)
   o = o or {}
@@ -131,8 +131,10 @@ function Schedule:new(o)
     -- appt.provider = 'Provider'
     if math.random() < No_show then
       appt.arrival_time = Time.string_to_time('23:59')
+      appt.status = 'no show'
     else
       appt.arrival_time = appt.appt_time + 60*triangular(-10,0,40)
+      appt.status = 'expected'
     end
   end
   -----------------------------------------------------------------
@@ -154,13 +156,21 @@ function Schedule:arrived()
   local new_arrivals = {}
   local new_arrival_count = 0
   for _, appt in ipairs(self) do
-    if appt.arrival_time <= Clock and appt.status == nil then
+    if appt.arrival_time <= Clock and appt.status == 'expected' then
       new_arrival_count = new_arrival_count + 1
       new_arrivals[new_arrival_count] = appt.pt
       appt.status = 'arrived'
     end
   end
   return new_arrivals
+end
+
+function Schedule:count()
+  local total=0
+  for _,pt in ipairs(self) do
+	  if pt.status ~= 'no show' then total = total + 1 end
+  end
+  return total
 end
 
 ----------- RESOURCES -------------------------------
@@ -223,7 +233,7 @@ Process = {name='process', sources={},
 
 function Process:new(o)
   o = o or {}
-  o.in_process = Set:new{}
+  o.in_process = {}
   o.required_resources = o.required_resources or {}
 --  o.current_resources = o.current_resources or {}
   o.queue = Queue:new()  -- for those who have finished process
@@ -235,11 +245,11 @@ end
 
 function Process:tick()
   -- Check whether there are any patients waiting for this process
-  local source_ready = self:patients_waiting() -- this queue has a patient ready
+  local source_ready = self:patients_waiting(self.providers) -- this queue has a patient ready
   print(self.name .. ' tick: source_ready = ' .. tostring(source_ready or 'none'))
   while source_ready and self:resources_available() do  -- add family to this process
-    self:start_process(source_ready:remove())
-    source_ready = self:patients_waiting()
+    self:start_process(source_ready:remove(self.providers))
+    source_ready = self:patients_waiting(self.providers)
   end
 
   -- release any families whose time is completed
@@ -443,38 +453,37 @@ function Queue_for_Provider:new(o)
   o.queue = Queue:new()
   return o
 end
+----------
+
 
 ------------- WAITING ROOM -----------------------
 
-Waiting_Room = {}
+--Waiting_Room = Queue:new{} -- Queue_collection:new()
 
-function Waiting_Room:new(o)
-  o = o or {}
-  setmetatable(o, self)
-  Waiting_Room.__index = self
-  Waiting_Room.__tostring = Waiting_Room.tostring
-  return o
-end
+
+Waiting_Room = Queue_collection:new({name='WR'})
 
 function Waiting_Room:add(fam) -- add a family to a provider queue in waiting room
+print('Adding to waiting room: ', fam)
   local provider = fam[1].provider  -- use first/only pt since all have same provider
-  wr[provider] = wr[provider] or Queue:new()  -- make new queue if needed
-  wr[provider]:add(fam)
+  Queue_collection.add(self, provider, fam)
 end
 
 function Waiting_Room:length()
   local n = 0
   for _, provider in pairs(self) do
-    if is_instance_of(provider, Queue) then
+  --  if is_instance_of(provider, Queue) then
       n = n + provider:length()
-    end
+  --  end
   end
   return n
 end
-
+--[[
 function Waiting_Room:tostring()
   return "Waiting room: " .. self:length() .. ' patients'
 end
+--]]
+
 --------- RESOURCE POOL ----------------------
 
 Resource_pool = {type=nil, count=0}

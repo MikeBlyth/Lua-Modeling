@@ -1,5 +1,7 @@
+---@diagnostic disable: lowercase-global
 print ('loading tests')
 
+--[[ before using, revise to use the Model and not global variables
 function test_source()
 -- used mainly to check random arrival of patients
   wr = Source:new()
@@ -29,8 +31,9 @@ function test_source()
   for i = 1,10 do print(i, created[i] or 0) end
   print ("Average per run = ", total_created/test_runs .. " error = " .. test_rate*test_runs/total_created)
 end
+--]]
 
---[[
+--[[ -- A test source that makes patients arrive randomly at an average rate of spawn_per_sec
 function Source:tick(seconds)
 -- random arrival in Poisson distribution at rate patients/hr
 spawn_per_sec = self.rate/3600
@@ -41,7 +44,7 @@ spawn_per_sec = self.rate/3600
 end
 --]]
 
-
+--[[ Superceded by Model.ticker() and Model.report()
 function clk()
   clocker(5)
   arr:tick(sched)
@@ -61,8 +64,22 @@ function clk()
   print(discharged)
   pe = post_exam
 end
-
-
 function clocker(n)
   Clock:advance_min(n)
 end
+--]]
+
+-- some abbreviations for debugging & testing on command line
+pt = Patient:new({name='Jay'})
+fam = Family:new({pt})
+Wr = Waiting_Room
+Qc = Queue_collection
+wrm = getmetatable(wr)
+gm = getmetatable
+sm = setmetatable
+qd = Qc.dump
+
+Symtab.add(Qc)
+Symtab.add(Wr)
+Symtab.add(Qc.tostring, 'Qc.tostring')
+--Symtab.add(Wr.tostring, 'Wr.tostring')

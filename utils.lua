@@ -1,29 +1,54 @@
 ---@diagnostic disable: lowercase-global
 -- UTILITIES AND DEBUGGING
-
+print ('loading utils')
 function dump(o) -- modified
-  if o == nil then return 'nil' end
-  if type(o) == 'table' then
-    local s = '{ '
-    if tableIsArray(o) then
-      for _, v in ipairs(o) do
-        s = s .. dump(v) .. ', '
-      end
-    else
-      for k,v in pairs(o) do
-        if type(k) == 'table' then 
-          k = dump(k) 
-        else
-          if type(k) ~= 'number' then k = '"'..k..'"' end
+    if o == nil then return 'nil' end
+    if type(o) == 'table' then
+      local s = '{ '
+      if tableIsArray(o) then
+        for _, v in ipairs(o) do
+          if v == o then 
+            -- trying to dump self will be an infinite loop!
+          s = s .. tostring(v) .. ',' -- like when self.__index = self
+          else
+            s = s .. dump(v) .. ', '
         end
-        s = s .. '['..k..']=' .. dump(v) .. ', '
+        end
+      else
+        for k,v in pairs(o) do
+          if type(k) == 'table' then 
+          k = dump(k) 
+          else
+            if type(k) ~= 'number' then k = '"'..k..'"' end
+          end
+          if v == o then 
+            -- trying to dump self will be an infinite loop!
+            s = s .. '['..k..']=' .. tostring(v) .. ',' -- like when self.__index = self
+          else
+            s = s .. '['..k..']=' .. dump(v) .. ', '
+          end
+        end
       end
+      if getmetatable(o) then s = s .. '**metatable=' .. tostring(getmetatable(o)) end 
+      return s .. '} '
+    else
+      return tostring(o)
     end
-    return s .. '} '
-  else
-    return tostring(o)
-  end
 end
+
+
+--[[ Probably superfluous since entries in mt.__index won't show up in pairs()
+function rawdump(o) -- dump a table IGNORING its inherited elements (from mt.__index)
+  if (type(o) ~= 'table') then return dump(o) end
+  local mt = getmetatable(o)
+  if mt==nil or mt.__index == nil then return dump(o) end
+  local save_index = mt.__index
+  local results = dump(o)
+  mt.__index = save_index
+  return results
+end
+--]]
+
 
 function pdump(o, s)
     s = s or ''
@@ -234,6 +259,7 @@ Queue.mt = {}
 function Queue:new (o)
   o = o or {}   -- create object if user does not provide one
   setmetatable(o, self.mt)
+---@diagnostic disable-next-line: undefined-field
   o.last = table.getn(o)   -- this handles cases where an array is passed
   Queue.mt.__index = self
   Queue.mt.__tostring = Queue.tostring
@@ -272,7 +298,7 @@ function Queue:empty()
     return self.last < self.first
 end
 
-function Queue:truncate()
+function Queue:truncate()  -- but this doesn't clear garbage!
   self.first=0
   self.last=1
 end
@@ -284,6 +310,97 @@ function Queue:tostring()
   end
   return str .. '>>'
 end
+
+---------- QUEUE COLLECTION
+
+Queue_collection = {name='Qc'}
+
+function Queue_collection:new(o)
+  print('qc new')
+  o = o or {}
+  self.__index = self
+  self.__tostring = self.tostring
+  setmetatable(o, self)
+  return o
+end 
+
+function Queue_collection:add(key,item)
+  self[key] = self[key] or Queue:new()
+  self[key]:add(item)
+end
+
+function Queue_collection:remove(key)
+  return self[key]:remove()
+end
+
+function Queue_collection:length(key)
+  return self[key]:length() or 0
+end
+
+function Queue_collection:empty(key)
+  return self[key]:empty()
+end
+
+function Queue_collection:tostring()
+  s = ''
+  for k, q in pairs(self) do
+    local qstr
+    if q == self then 
+      qstr = '*self*'
+    else
+      qstr = tostring(q)
+    end  
+    s = s .. tostring(k) .. '->' .. qstr .. '\n'
+  end
+  return s
+end
+
+function Queue_collection:dump()  -- uses Symtab if available
+  local smt = getmetatable(self)
+  local s = (self.name or '?') .. ": mt=" .. Symtab.get(smt) .. '; tostring=' .. Symtab.get(self.tostring) .. '; __tostring=' .. Symtab.get(self.__tostring) 
+  if smt then 
+    s = s .. '; mt.__index=' .. Symtab.get(smt.__index)
+    s = s ..  '; mt.__tostring=' .. Symtab.get(smt.__tostring) .. '\n'
+  end
+  print(s)
+end
+
+------ Symbol Table
+Symtab = {}
+function Symtab.add(obj, name)
+  local raw = rawstr(obj)
+  local tf, key, addr
+  _, _, key, addr = string.find(raw, "(%a+):%s*(.+)")
+  name = name or obj.name or '?'
+  Symtab[raw] = name .. ' (' .. string.sub(key, 1,1) .. ')'
+end
+function Symtab.get(obj) -- get name from object or address string
+  local addr
+  if obj == nil then return 'nil' end
+  if type(obj) ~= 'string' then -- i.e. argument is the object itself
+    addr = rawstr(obj)
+  else
+    addr = obj   -- argument is like 'table: 0x1512d50'
+  end
+  return Symtab[addr] or addr
+end
+
+---- rawstr - returns tostring of object itself without its mt.__tostring
+function rawstr(t)
+  local mt = getmetatable(t)
+  local save_tostring
+  if mt and mt.__tostring then
+     save_tostring = mt.__tostring
+     mt.__tostring = nil
+  end
+  local raw = tostring(t)
+  if save_tostring then
+    mt.__tostring = save_tostring
+  end
+  return raw
+end
+
+--------- OTHER -----------
 
 function triangular(a, b, c)
 -- a = low limit, b = high limit, c = mode
@@ -312,5 +429,3 @@ function rotate(v, angle)  -- 2d rotation of standard TTS position vector
     return Vector(x2, v.y, z2)
 end
 
--- for testing
-q = Queue:new()

@@ -13,6 +13,7 @@
         "test_rate",
         "clk",
         "pe",
-        "clocker"
+        "clocker",
+        "Vector"
     ]
 }
