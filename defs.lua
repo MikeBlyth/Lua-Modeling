@@ -292,7 +292,7 @@ function Process:calc_completion_time(fam)
 end
 
 
-function Process:patients_waiting()
+function Process:patients_waiting(provider) -- optional provider param not yet used
   for _,source in ipairs(self.sources) do
     if source:length() > 0 then return source end
   end
